@@ -53,7 +53,7 @@ headers = {
 new_data = {
     "train_data_url": [
     ],
-    "device_id": "d7a269897b6cc7b71365f61ca2f7b2ed",
+    "device_id": "f78269897b6cc7b856541f61ca2f7yhg5",
     "audio_format": {
         "codec": "pcm",
         "rate": 16000,
