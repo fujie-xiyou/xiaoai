@@ -1,9 +1,10 @@
 import base64
 import os
+import random
+import string
 import sys
 import requests
 import json
-import time
 
 n = 0
 src_file_type = ""
@@ -53,7 +54,7 @@ headers = {
 new_data = {
     "train_data_url": [
     ],
-    "device_id": "f78269897b6cc7b856541f61ca2f7yhg5",
+    "device_id": ''.join(random.sample(string.ascii_letters + string.digits, 22)),
     "audio_format": {
         "codec": "pcm",
         "rate": 16000,
@@ -61,7 +62,7 @@ new_data = {
         "channel": 1,
         "lang": "zh-CN"
     },
-    "request_id": "45632561tyuiop05c34ef0bbcc888"
+    "request_id": ''.join(random.sample(string.ascii_letters + string.digits, 22))
 }
 
 
@@ -96,7 +97,7 @@ def asr_audio(args):
             audio_data = f.read()
             asr_data["originText"] = texts[i - 1]
             asr_data["httpAsrRequest"]["asr_audio"] = audio_data
-            asr_data["httpAsrRequest"]["request_id"] = str(int(time.time()))
+            asr_data["httpAsrRequest"]["request_id"] = ''.join(random.sample(string.ascii_letters + string.digits, 22))
             resp = requests.post(url="https://speech.ai.xiaomi.com/speech/v1.0/asr/ptts/detect",
                                  json=asr_data,
                                  headers=headers)
@@ -166,7 +167,7 @@ def upload_record():
         with open("b64/%s.b64" % i, "r") as f:
             audio_data = f.read()
             data["audio_data"] = audio_data
-            data["request_id"] = "fujie%s%s" % (i, str(int(time.time())))
+            data["request_id"] = ''.join(random.sample(string.ascii_letters + string.digits, 22))
             resp = requests.post("https://speech.ai.xiaomi.com/speech/v1.0/ptts/upload",
                                  json=data,
                                  headers=headers)
