@@ -180,7 +180,6 @@ def upload_record():
 
 
 def post_record():
-    new_data["model_name"] = input("请输入音色名称：")
     while True:
         inp = input("请选择性别(男生：1，女生：2)：")
         if inp != '1' and inp != '2':
@@ -188,22 +187,38 @@ def post_record():
             continue
         new_data["user_gender"] = "male" if inp == '1' else "female"
         break
-    resp = requests.post("https://speech.ai.xiaomi.com/speech/v1.0/ptts/train",
-                         json=new_data,
-                         headers=headers)
-    if resp.status_code == 200:
-        print("音色提交结果：")
-        print(resp.text)
-    else:
-        print("音色提交失败，code: %s, resp: %s" % (resp.status_code, resp.text))
+    while True:
+        new_data["model_name"] = input("请输入音色名称：")
+        resp = requests.post("https://speech.ai.xiaomi.com/speech/v1.0/ptts/train",
+                             json=new_data,
+                             headers=headers)
+        if resp.status_code == 200:
+            resp_json = resp.json()
+            if int(resp_json["code"]) == 200:
+                print("提交成功，请进入小爱音色列表查看")
+                break
+            else:
+                print("提交失败，{} 错误码: {}".format(resp_json["details"], resp_json["code"]))
+                if "模型数量" in resp_json["details"]:
+                    input("请在手机上删除不需要的音色，然后按回车重新提交...")
+                else:
+                    input("按回车返回重新输入音色名提交...")
+
+        else:
+            print("音色提交失败，code: %s, resp: %s" % (resp.status_code, resp.text))
+            inp = input("是否重试？（yes/no）:")
+            if inp == "yes":
+                continue
+            else:
+                break
 
 
-def getAuthorization():
+def get_authorization():
     try:
         af = open("Authorization.txt", 'r')
-        Authorization = af.readline().strip()
+        authorization = af.readline().strip()
         af.close()
-        headers["Authorization"] = Authorization
+        headers["Authorization"] = authorization
         resp = requests.get("https://speech.ai.xiaomi.com/speech/v1.0/ptts/list",
                             headers=headers)
         if resp.status_code == 200:
@@ -221,8 +236,8 @@ def getAuthorization():
     except FileNotFoundError:
         af = open("Authorization.txt", 'w')
         while True:
-            Authorization = input("请输入Authorization(抓包获取，详见教程)：")
-            headers["Authorization"] = Authorization
+            authorization = input("请输入Authorization(抓包获取，详见教程)：")
+            headers["Authorization"] = authorization
             resp = requests.get("https://speech.ai.xiaomi.com/speech/v1.0/ptts/list",
                                 headers=headers)
             if resp.status_code == 200:
@@ -231,7 +246,7 @@ def getAuthorization():
                     print("Authorization无效，请重新输入")
                     continue
                 else:
-                    af.write(Authorization)
+                    af.write(authorization)
                     break
             else:
                 print("Authorization无效，请重新输入")
@@ -251,7 +266,7 @@ if __name__ == '__main__':
           "   (一行一个，注意标点符号全部使用中文标点)\n")
     print("   注意，该文件中的每一行文字，要和每一个\n"
           "   声音文件的内容一一对应，因此，该文件总共有20行或者30行\n")
-    input("准备就绪后按任意键继续...")
+    input("准备就绪后按回车继续...")
     while True:
         work_dir = input("请输入工作目录(原始声音文件所在目录的绝对路径，例如：D:\\Data\\lubenwei)：")
         if not work_dir or not os.path.exists(work_dir):
@@ -262,8 +277,13 @@ if __name__ == '__main__':
     src_file_type = input("请输入原始文件格式(mp3/wav/m4a/pcm等)：")
     while True:
         try:
-            text = open("texts.txt")
-            texts = text.readlines()
+            text = open("texts.txt", encoding="gb18030")
+            try:
+                texts = text.readlines()
+            except UnicodeDecodeError:
+                text.close()
+                text = open("texts.txt", encoding="utf-8")
+                texts = text.readlines()
             text.close()
             texts = [text.strip() for text in texts]
             break
@@ -281,9 +301,9 @@ if __name__ == '__main__':
                     print("声音文件 {}.{} 不存在。".format(i, src_file_type))
                     is_error = True
         if is_error:
-            input("存在错误，请处理完按任意键继续...")
+            input("存在错误，请处理完按回车继续...")
     open("result.json", "w").close()
-    getAuthorization()
+    get_authorization()
     print("文件准备就绪，开始处理")
     while True:
         process_record()
@@ -301,4 +321,4 @@ if __name__ == '__main__':
     print("校验通过，开始上传。")
     upload_record()
     post_record()
-    input("执行结束，按任意键关闭窗口。")
+    input("执行结束，按回车关闭窗口。")
