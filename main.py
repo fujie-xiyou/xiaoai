@@ -13,6 +13,7 @@ if getattr(sys, 'frozen', False):  # 是否Bundle Resource
 else:
     base_path = os.path.abspath(".")
 ffmpeg_exec = os.path.join(base_path, "ffmpeg.exe")
+cp_exec = "copy"
 
 codes = {
     40007: "声音太小",
@@ -139,7 +140,7 @@ def process_record():
     except FileNotFoundError:
         args = None
     if src_file_type == "pcm":
-        os.system("copy *.pcm pcm")
+        os.system("{} *.pcm pcm".format(cp_exec))
     else:
         wav2pcm(args)
     pcm2base64(args)
