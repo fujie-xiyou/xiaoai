@@ -8,6 +8,8 @@ import json
 
 n = 0
 src_file_type = ""
+run_path = os.path.abspath(".")
+texts = []
 if getattr(sys, 'frozen', False):  # 是否Bundle Resource
     base_path = sys._MEIPASS
 else:
@@ -180,6 +182,36 @@ def upload_record():
                 print("第 %s 条上传失败，code: %s, resp: %s" % (i, resp.status_code, resp.text))
 
 
+def delete():
+    resp = requests.get("https://speech.ai.xiaomi.com/speech/v1.0/ptts/list",
+                        headers=headers)
+    resp_json = resp.json()
+    models = resp_json["models"]["Owner"]
+    i = 1
+    delete_data = {"model_name": "",
+                   "device_id": ''.join(random.sample(string.ascii_letters + string.digits, 22)),
+                   "vendor_id": "",
+                   "request_id": "ptts_{}".format(''.join(random.sample(string.ascii_letters + string.digits, 22)))}
+    for model in models:
+        print("{}. 音色名：{} 状态：{}".format(i, model["name"], model["status"]))
+        i += 1
+
+    inp = input("输入序号删除音色，直接回车退出：")
+    if inp:
+        delete_data["model_name"] = models[int(inp) - 1]["name"]
+        delete_data["vendor_id"] = models[int(inp) - 1]["vendor_id"]
+        resp = requests.delete("https://speech.ai.xiaomi.com/speech/v1.0/ptts/model",
+                               headers=headers,
+                               json=delete_data)
+        if resp.status_code == 200:
+            resp_json = resp.json()
+            print("删除成功")
+        else:
+            print("删除失败。")
+
+    pass
+
+
 def post_record():
     while True:
         inp = input("请选择性别(男生：1，女生：2)：")
@@ -201,7 +233,8 @@ def post_record():
             else:
                 print("提交失败，{} 错误码: {}".format(resp_json["details"], resp_json["code"]))
                 if "模型数量" in resp_json["details"]:
-                    input("请在手机上删除不需要的音色，然后按回车重新提交...")
+                    delete()
+                    continue
                 else:
                     input("按回车返回重新输入音色名提交...")
 
@@ -215,8 +248,9 @@ def post_record():
 
 
 def get_authorization():
+    authorization_path = os.path.join(run_path, "Authorization.txt")
     try:
-        af = open("Authorization.txt", 'r')
+        af = open(authorization_path, 'r')
         authorization = af.readline().strip()
         af.close()
         headers["Authorization"] = authorization
@@ -235,7 +269,7 @@ def get_authorization():
             print("上次的Authorization已经失效")
             raise FileNotFoundError
     except FileNotFoundError:
-        af = open("Authorization.txt", 'w')
+        af = open(authorization_path, 'w')
         while True:
             authorization = input("请输入Authorization(抓包获取，详见教程)：")
             headers["Authorization"] = authorization
@@ -254,7 +288,10 @@ def get_authorization():
                 continue
 
 
-if __name__ == '__main__':
+def main():
+    global texts
+    global src_file_type
+    global n
     print("本程序支持常见的声音格式例如，mp3 wav m4a等。")
     print("也可以直接使用pcm文件。")
     print("开始之前，请先完成以下准备工作\n")
@@ -323,3 +360,7 @@ if __name__ == '__main__':
     upload_record()
     post_record()
     input("执行结束，按回车关闭窗口。")
+
+
+if __name__ == '__main__':
+    main()
