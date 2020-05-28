@@ -6,6 +6,7 @@ import sys
 import requests
 import json
 import platform
+import logging
 
 n = 0
 src_file_type = ""
@@ -99,40 +100,6 @@ def pcm2base64(args):
                 bf.write(base64_str)
 
 
-def asr_audio(args):
-    files = args if args else range(1, n)
-    result_html = open("result.html", "w")
-    error_nos = []
-    for i in files:
-        with open("b64/%s.b64" % i, "r") as f:
-            audio_data = f.read()
-            asr_data["originText"] = texts[i - 1]
-            asr_data["httpAsrRequest"]["asr_audio"] = audio_data
-            asr_data["httpAsrRequest"]["request_id"] = ''.join(random.sample(string.ascii_letters + string.digits, 22))
-            resp = requests.post(url="https://speech.ai.xiaomi.com/speech/v1.0/asr/ptts/detect",
-                                 json=asr_data,
-                                 headers=headers)
-            if resp.status_code == 200:
-                content = json.loads(resp.text)
-                if content["code"] == 200:
-                    print("第 %s 条校验成功" % i)
-                else:
-                    result = resp.json()
-                    print("第 %s 条校验失败！原因：%s" % (i, codes.get(result["sub_code"], result["sub_code"])))
-                    error_nos.append(i)
-                    result_html.write(result["text"]
-                                      .replace("<html><body>", "<div>{}. ".format(i))
-                                      .replace("</body></html>", " <span style=\"color:red\">({})</span></div>"
-                                               .format(codes.get(result["sub_code"], result["sub_code"]))))
-            else:
-                print("第 %s 条校验失败！可能是Authorization不正确。http_code: %s resp: %s" % (i, resp.status_code, resp.text))
-                error_nos.append(i)
-    rf = open("result.json", "w")
-    rf.write(json.dumps({"error_nos": error_nos}))
-    rf.close()
-    result_html.close()
-
-
 def process_record():
     print("开始处理声音文件...")
     if not os.path.exists("pcm") and not os.path.exists("b64"):
@@ -170,7 +137,44 @@ def verify_record():
             print("仅检验第 {} 条".format(args))
     except FileNotFoundError:
         args = None
-    asr_audio(args)
+    files = args if args else range(1, n)
+    result_html = open("result.html", "w")
+    error_nos = []
+    for i in files:
+        with open("b64/%s.b64" % i, "r") as f:
+            audio_data = f.read()
+            asr_data["originText"] = texts[i - 1]
+            asr_data["httpAsrRequest"]["asr_audio"] = audio_data
+            asr_data["httpAsrRequest"]["request_id"] = ''.join(random.sample(string.ascii_letters + string.digits, 22))
+            while True:
+                try:
+                    resp = requests.post(url="https://speech.ai.xiaomi.com/speech/v1.0/asr/ptts/detect",
+                                         json=asr_data,
+                                         headers=headers,
+                                         timeout=5)
+                    break
+                except requests.exceptions.RequestException:
+                    print("请求超时，正在重试...")
+                    continue
+            if resp.status_code == 200:
+                content = json.loads(resp.text)
+                if content["code"] == 200:
+                    print("第 %s 条校验成功" % i)
+                else:
+                    result = resp.json()
+                    print("第 %s 条校验失败！原因：%s" % (i, codes.get(result["sub_code"], result["sub_code"])))
+                    error_nos.append(i)
+                    result_html.write(result["text"]
+                                      .replace("<html><body>", "<div>{}. ".format(i))
+                                      .replace("</body></html>", " <span style=\"color:red\">({})</span></div>"
+                                               .format(codes.get(result["sub_code"], result["sub_code"]))))
+            else:
+                print("第 %s 条校验失败！可能是Authorization不正确。http_code: %s resp: %s" % (i, resp.status_code, resp.text))
+                error_nos.append(i)
+    rf = open("result.json", "w")
+    rf.write(json.dumps({"error_nos": error_nos}))
+    rf.close()
+    result_html.close()
 
 
 def upload_record():
@@ -179,20 +183,45 @@ def upload_record():
             audio_data = f.read()
             data["audio_data"] = audio_data
             data["request_id"] = ''.join(random.sample(string.ascii_letters + string.digits, 22))
-            resp = requests.post("https://speech.ai.xiaomi.com/speech/v1.0/ptts/upload",
-                                 json=data,
-                                 headers=headers)
-            if resp.status_code == 200:
-                print("第 %s 条上传成功" % i)
-                item = {"url": json.loads(resp.text)["audio_file"], "id": str(i), "text": texts[i - 1]}
-                new_data["train_data_url"].append(item)
-            else:
-                print("第 %s 条上传失败，code: %s, resp: %s" % (i, resp.status_code, resp.text))
+            while True:
+                try:
+                    resp = requests.post("https://speech.ai.xiaomi.com/speech/v1.0/ptts/upload",
+                                         json=data,
+                                         headers=headers,
+                                         timeout=5)
+                    if resp.status_code == 200:
+                        resp_json = resp.json()
+                        if resp_json["code"] == 200:
+                            print("第 %s 条上传成功" % i)
+                            item = {"url": resp_json["audio_file"], "id": str(i), "text": texts[i - 1]}
+                            new_data["train_data_url"].append(item)
+                            break
+                        else:
+                            print("第 %s 条上传失败，resp: %s" % (i, resp.text))
+                            print("正在重试...")
+                            continue
+                    else:
+                        print("第 %s 条上传失败，code: %s, resp: %s" % (i, resp.status_code, resp.text))
+                        inp = input("是否重试？(yes/no)")
+                        if inp == "yes":
+                            continue
+                        else:
+                            break
+                except requests.exceptions.RequestException:
+                    print("请求超时，正在重试...")
+                    continue
 
 
 def delete():
-    resp = requests.get("https://speech.ai.xiaomi.com/speech/v1.0/ptts/list",
-                        headers=headers)
+    while True:
+        try:
+            resp = requests.get("https://speech.ai.xiaomi.com/speech/v1.0/ptts/list",
+                                headers=headers,
+                                timeout=5)
+            break
+        except requests.exceptions.RequestException:
+            print("请求超时，正在重试...")
+            continue
     resp_json = resp.json()
     models = resp_json["models"]["Owner"]
     i = 1
@@ -208,9 +237,16 @@ def delete():
     if inp:
         delete_data["model_name"] = models[int(inp) - 1]["name"]
         delete_data["vendor_id"] = models[int(inp) - 1]["vendor_id"]
-        resp = requests.delete("https://speech.ai.xiaomi.com/speech/v1.0/ptts/model",
-                               headers=headers,
-                               json=delete_data)
+        while True:
+            try:
+                resp = requests.delete("https://speech.ai.xiaomi.com/speech/v1.0/ptts/model",
+                                       headers=headers,
+                                       json=delete_data,
+                                       timeout=5)
+                break
+            except requests.exceptions.RequestException:
+                print("请求超时，正在重试...")
+                continue
         if resp.status_code == 200:
             print("删除成功")
         else:
@@ -229,9 +265,16 @@ def post_record():
         break
     while True:
         new_data["model_name"] = input("请输入音色名称：")
-        resp = requests.post("https://speech.ai.xiaomi.com/speech/v1.0/ptts/train",
-                             json=new_data,
-                             headers=headers)
+        while True:
+            try:
+                resp = requests.post("https://speech.ai.xiaomi.com/speech/v1.0/ptts/train",
+                                     json=new_data,
+                                     headers=headers,
+                                     timeout=5)
+                break
+            except requests.exceptions.RequestException:
+                print("请求超时，正在重试...")
+                continue
         if resp.status_code == 200:
             resp_json = resp.json()
             if int(resp_json["code"]) == 200:
@@ -261,8 +304,15 @@ def get_authorization():
         authorization = af.readline().strip()
         af.close()
         headers["Authorization"] = authorization
-        resp = requests.get("https://speech.ai.xiaomi.com/speech/v1.0/ptts/list",
-                            headers=headers)
+        while True:
+            try:
+                resp = requests.get("https://speech.ai.xiaomi.com/speech/v1.0/ptts/list",
+                                    headers=headers,
+                                    timeout=5)
+                break
+            except requests.exceptions.RequestException:
+                print("请求超时，正在重试...")
+                continue
         if resp.status_code == 200:
             resp_json = resp.json()
             if resp_json["code"] != 200:
@@ -280,8 +330,15 @@ def get_authorization():
         while True:
             authorization = input("请输入Authorization(抓包获取，详见教程)：")
             headers["Authorization"] = authorization
-            resp = requests.get("https://speech.ai.xiaomi.com/speech/v1.0/ptts/list",
-                                headers=headers)
+            while True:
+                try:
+                    resp = requests.get("https://speech.ai.xiaomi.com/speech/v1.0/ptts/list",
+                                        headers=headers,
+                                        timeout=5)
+                    break
+                except requests.exceptions.RequestException:
+                    print("请求超时，正在重试...")
+                    continue
             if resp.status_code == 200:
                 resp_json = resp.json()
                 if resp_json["code"] != 200:
@@ -356,6 +413,7 @@ def main():
         verify_record()
         rf = open("result.json", "r")
         args = json.loads(rf.readline().strip()).get("error_nos")
+        rf.close()
         if not args:
             break
         else:
@@ -371,4 +429,8 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as e:
+        logging.exception(e)
+        input("出现未知错误，请截图反馈，然后按任意键退出...")
