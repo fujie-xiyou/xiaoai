@@ -5,20 +5,28 @@ import string
 import sys
 import requests
 import json
+import platform
 
 n = 0
 src_file_type = ""
 run_path = os.path.abspath(".")
 texts = []
-if getattr(sys, 'frozen', False):  # 是否Bundle Resource
-    base_path = sys._MEIPASS
+
+os_name = platform.system()
+if os_name == "Windows":
+    if getattr(sys, 'frozen', False):  # 是否Bundle Resource
+        base_path = sys._MEIPASS
+    else:
+        base_path = run_path
+    ffmpeg_exec = os.path.join(base_path, "ffmpeg.exe")
+    cp_exec = "copy"
 else:
-    base_path = os.path.abspath(".")
-ffmpeg_exec = os.path.join(base_path, "ffmpeg.exe")
-cp_exec = "copy"
+    ffmpeg_exec = "ffmpeg"
+    cp_exec = "cp"
 
 codes = {
-    40007: "声音太小",
+    40006: "音量太大",
+    40007: "音量太小",
     40008: "出现了一些小问题",
     40009: "多读了",
 }
@@ -204,7 +212,6 @@ def delete():
                                headers=headers,
                                json=delete_data)
         if resp.status_code == 200:
-            resp_json = resp.json()
             print("删除成功")
         else:
             print("删除失败。")
@@ -312,7 +319,6 @@ def main():
             continue
         break
     os.chdir(work_dir)
-    src_file_type = input("请输入原始文件格式(mp3/wav/m4a/pcm等)：")
     while True:
         try:
             text = open("texts.txt", encoding="gb18030")
@@ -323,7 +329,7 @@ def main():
                 text = open("texts.txt", encoding="utf-8")
                 texts = text.readlines()
             text.close()
-            texts = [text.strip() for text in texts]
+            texts = [text.strip() for text in texts if text.strip()]
             break
         except FileNotFoundError:
             input("工作目录下texts.txt不存在，请按要求放入该文件，然后按回车继续")
@@ -333,11 +339,13 @@ def main():
     is_error = True
     while is_error:
         is_error = False
+        src_file_type = input("请输入原始文件格式(mp3/wav/m4a/pcm等)：")
         for i in range(1, n):
-            with open("{}.{}".format(i, src_file_type), "r") as f:
-                if not f:
-                    print("声音文件 {}.{} 不存在。".format(i, src_file_type))
-                    is_error = True
+            try:
+                open("{}.{}".format(i, src_file_type), "r")
+            except FileNotFoundError:
+                print("声音文件 {}.{} 不存在。".format(i, src_file_type))
+                is_error = True
         if is_error:
             input("存在错误，请处理完按回车继续...")
     open("result.json", "w").close()
