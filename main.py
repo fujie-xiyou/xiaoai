@@ -579,8 +579,8 @@ def main():
     while True:
         src_file_type = input("请输入原始文件格式(mp3/wav/m4a/pcm等)：")
         files = [file for file in os.listdir(".") if file.endswith(".{}".format(src_file_type))]
-        n = len(files)
-        if n > 0:
+        n = len(files) + 1
+        if n > 1:
             files.sort(key=lambda x: int(x.split(".")[0]))
             break
         else:
