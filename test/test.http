@@ -1,0 +1,4 @@
+GET https://speech.ai.xiaomi.com/speech/v1.0/ptts/list
+Accept: application/json
+Authorization: AO-TOKEN-V1 dev_app_id:2882303761517844702,access_token:V3_piKMZzH_xkNddFTAT02iT5DjhQdOI3hG6AkYosJYtGvS0PDJZWzPuQkHagkTrOBVqDyWvUe4x0mi80oiSMoi9WJwz9hhk_J8EJAIk4brN80NIkFtpafXgHXJO0Ss9WcT
+###

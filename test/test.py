@@ -6,16 +6,10 @@ os.chdir("/Users/fujie/Downloads/lu")
 headers = {
     "user-agent": "Mi 10; MIAI/5.8.6-202004101658-28 Build/305008006 Channel/MIUI20.3.28 Device/umi OS/10 SDK/29 "
                   "Flavors/upgrade28",
-    "Authorization": "DO-TOKEN-V1 app_id:326813440150602752,scope_data:eyJkIjoiYjljZjkyZWVjMDNlYmJjMyJ9,"
-                     "access_token:V3_ic-2pifIZdQ5UM33OpcdPU_rCBCWm89xvYUZZWz3fc81hHSDmJdqEH4Q7omLgOhdyQivfVq0B4"
-                     "-ABe20JRup17ag_Ue2oOLHY-YoeHrjmhBF5Tyrmmv_Maiam88HM5IW "
+    "Authorization": "AO-TOKEN-V1 dev_app_id:2882303761517844702,scope_data:eyJkIjoiZWM1YmUzNTAwNzhjZGRkYyJ9,"
+                     "access_token:V3_piKMZzH_xkNddFTAT02iT5DjhQdOI3hG6AkYosJYtGvS0PDJZWzPuQkHagkTrOBVqDyWvUe4x0mi80oiSMoi9WJwz9hhk_J8EJAIk4brN80NIkFtpafXgHXJO0Ss9WcT"
 }
 
-
-a = "DO-TOKEN-V1 app_id:326813440150602752,scope_data:eyJkIjoiYjljZjkyZWVjMDNlYmJjMyJ9," \
-    "access_token:V3_zO12DXKMsm7JPEHPcpiGVll62hN5F_4Ja1C4lKxZP3AEC" \
-    "-h5p1SFGQHMqGthtA7GVuQB_SzyAbJPmXFrdFmAQJS3hdWNKhmnnn82eOPaPW9I032mvhH" \
-    "--_B0zDcOAhmGif97K3aR7ecgYsRE75aYHa8Hxunaw1GeQJipG0DeVQs "
 with open("b64/%s.b64" % 1, "r") as f:
     audio_data = f.read()
     asr_data = {

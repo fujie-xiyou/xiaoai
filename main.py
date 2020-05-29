@@ -7,6 +7,17 @@ import requests
 import json
 import platform
 import logging
+import websocket
+import datetime
+import hashlib
+import hmac
+from urllib.parse import urlencode
+import time
+import ssl
+from wsgiref.handlers import format_date_time
+from datetime import datetime
+from time import mktime
+import _thread as thread
 
 n = 0
 src_file_type = ""
@@ -24,6 +35,9 @@ if os_name == "Windows":
 else:
     ffmpeg_exec = "ffmpeg"
     cp_exec = "cp"
+config_path = os.path.expanduser("~/.xiaoai")
+if not os.path.exists(config_path):
+    os.mkdir(config_path)
 
 codes = {
     40006: "音量太大",
@@ -78,6 +92,173 @@ new_data = {
 }
 
 
+class Ws_Param(object):
+    # 初始化
+    def __init__(self, APPID, APIKey, APISecret):
+        self.APPID = APPID
+        self.APIKey = APIKey
+        self.APISecret = APISecret
+        self.result = ''
+
+        # 公共参数(common)
+        self.CommonArgs = {"app_id": self.APPID}
+        # 业务参数(business)，更多个性化参数可在官网查看
+        self.BusinessArgs = {"domain": "iat", "language": "zh_cn", "accent": "mandarin", "vinfo": 1, "vad_eos": 10000}
+
+    # 生成url
+    def create_url(self):
+        url = 'wss://ws-api.xfyun.cn/v2/iat'
+        # 生成RFC1123格式的时间戳
+        now = datetime.now()
+        date = format_date_time(mktime(now.timetuple()))
+
+        # 拼接字符串
+        signature_origin = "host: " + "ws-api.xfyun.cn" + "\n"
+        signature_origin += "date: " + date + "\n"
+        signature_origin += "GET " + "/v2/iat " + "HTTP/1.1"
+        # 进行hmac-sha256进行加密
+        signature_sha = hmac.new(self.APISecret.encode('utf-8'), signature_origin.encode('utf-8'),
+                                 digestmod=hashlib.sha256).digest()
+        signature_sha = base64.b64encode(signature_sha).decode(encoding='utf-8')
+
+        authorization_origin = "api_key=\"%s\", algorithm=\"%s\", headers=\"%s\", signature=\"%s\"" % (
+            self.APIKey, "hmac-sha256", "host date request-line", signature_sha)
+        authorization = base64.b64encode(authorization_origin.encode('utf-8')).decode(encoding='utf-8')
+        # 将请求的鉴权参数组合为字典
+        v = {
+            "authorization": authorization,
+            "date": date,
+            "host": "ws-api.xfyun.cn"
+        }
+        # 拼接鉴权参数，生成url
+        url = url + '?' + urlencode(v)
+        # print("date: ",date)
+        # print("v: ",v)
+        # 此处打印出建立连接时候的url,参考本demo的时候可取消上方打印的注释，比对相同参数时生成的url与自己代码生成的url是否一致
+        # print('websocket url :', url)
+        return url
+
+
+class Iat(object):
+    def __init__(self):
+        self.STATUS_FIRST_FRAME = 0  # 第一帧的标识
+        self.STATUS_CONTINUE_FRAME = 1  # 中间帧标识
+        self.STATUS_LAST_FRAME = 2  # 最后一帧的标识
+        self.all_result = ''
+        xunfei_config_path = os.path.join(config_path, "xunfei.conf")
+        try:
+            f = open(xunfei_config_path)
+            self.app_id = f.readline().strip()
+            self.api_secret = f.readline().strip()
+            self.api_key = f.readline().strip()
+            f.close()
+        except FileNotFoundError:
+            print("你是第一次使用该功能，需要在讯飞开发平台(https://www.xfyun.cn/)")
+            print("注册账户，并新建一个语音听写应用")
+            print("然后可以在(https://www.xfyun.cn/services/voicedictation)领取五万次服务包")
+            print("然后将控制台的APPID、APISecret、APIKey依次输入")
+            input("准备就绪后按回车继续...")
+            self.app_id = input("请输入讯飞APPID：")
+            self.api_secret = input("请输入讯飞APISecret：")
+            self.api_key = input("请输入讯飞APIKey：")
+            f = open(xunfei_config_path, "w")
+            f.writelines(self.app_id + "\n")
+            f.writelines(self.api_secret + "\n")
+            f.writelines(self.api_key + "\n")
+            f.close()
+        self.wsParam = Ws_Param(APPID=self.app_id, APIKey=self.api_key,
+                           APISecret=self.api_secret)
+
+    def start(self, audio_file):
+        self.all_result = ''
+
+        # 收到websocket消息的处理
+        def on_message(ws, message):
+            try:
+                code = json.loads(message)["code"]
+                sid = json.loads(message)["sid"]
+                if code != 0:
+                    errMsg = json.loads(message)["message"]
+                    print("sid:%s call error:%s code is:%s" % (sid, errMsg, code))
+
+                else:
+                    data = json.loads(message)["data"]["result"]["ws"]
+                    # print(json.loads(message))
+                    result = ""
+                    for i in data:
+                        for w in i["cw"]:
+                            result += w["w"]
+                    # print("sid:%s call success!,data is:%s" % (sid, json.dumps(data, ensure_ascii=False)))
+                    print(result, end='')
+                    self.all_result += result
+            except Exception as e:
+                print("receive msg,but parse exception:", e)
+
+        # 收到websocket错误的处理
+        def on_error(ws, error):
+            print("### error:", error)
+
+        # 收到websocket关闭的处理
+        def on_close(ws):
+            print("")
+            if self.all_result:
+                f = open("texts.txt", "a")
+                f.writelines(self.all_result + "\n")
+                f.close()
+
+        # 收到websocket连接建立的处理
+        def on_open(ws):
+            def run(*args):
+                frameSize = 8000  # 每一帧的音频大小
+                intervel = 0.04  # 发送音频间隔(单位:s)
+                status = self.STATUS_FIRST_FRAME  # 音频的状态信息，标识音频是第一帧，还是中间帧、最后一帧
+
+                with open(audio_file, "rb") as fp:
+                    while True:
+                        buf = fp.read(frameSize)
+                        # 文件结束
+                        if not buf:
+                            status = self.STATUS_LAST_FRAME
+                        # 第一帧处理
+                        # 发送第一帧音频，带business 参数
+                        # appid 必须带上，只需第一帧发送
+                        if status == self.STATUS_FIRST_FRAME:
+
+                            d = {"common": self.wsParam.CommonArgs,
+                                 "business": self.wsParam.BusinessArgs,
+                                 "data": {"status": 0, "format": "audio/L16;rate=16000",
+                                          "audio": str(base64.b64encode(buf), 'utf-8'),
+                                          "encoding": "raw"}}
+                            d = json.dumps(d)
+                            ws.send(d)
+                            status = self.STATUS_CONTINUE_FRAME
+                        # 中间帧处理
+                        elif status == self.STATUS_CONTINUE_FRAME:
+                            d = {"data": {"status": 1, "format": "audio/L16;rate=16000",
+                                          "audio": str(base64.b64encode(buf), 'utf-8'),
+                                          "encoding": "raw"}}
+                            ws.send(json.dumps(d))
+                        # 最后一帧处理
+                        elif status == self.STATUS_LAST_FRAME:
+                            d = {"data": {"status": 2, "format": "audio/L16;rate=16000",
+                                          "audio": str(base64.b64encode(buf), 'utf-8'),
+                                          "encoding": "raw"}}
+                            ws.send(json.dumps(d))
+                            time.sleep(1)
+                            break
+                        # 模拟音频采样间隔
+                        time.sleep(intervel)
+                ws.close()
+
+            thread.start_new_thread(run, ())
+
+        websocket.enableTrace(False)
+        wsUrl = self.wsParam.create_url()
+        ws = websocket.WebSocketApp(wsUrl, on_message=on_message, on_error=on_error, on_close=on_close)
+        ws.on_open = on_open
+        ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE})
+
+
 def wav2pcm(args):
     """
     名字虽然叫wav2pcm 但是其实可以将各种声音格式转为pcm
@@ -102,8 +283,9 @@ def pcm2base64(args):
 
 def process_record():
     print("开始处理声音文件...")
-    if not os.path.exists("pcm") and not os.path.exists("b64"):
+    if not os.path.exists("pcm"):
         os.mkdir("pcm")
+    if not os.path.exists("b64"):
         os.mkdir("b64")
     try:
         rf = open("result.json", "r")
@@ -298,7 +480,7 @@ def post_record():
 
 
 def get_authorization():
-    authorization_path = os.path.join(run_path, "Authorization.txt")
+    authorization_path = os.path.join(config_path, "Authorization.txt")
     try:
         af = open(authorization_path, 'r')
         authorization = af.readline().strip()
@@ -356,6 +538,7 @@ def main():
     global texts
     global src_file_type
     global n
+    print("本程序仅供技术交流，切勿用于商业用途。\n私自盗用、贩卖由其个人或组织承担相应责任。")
     print("本程序支持常见的声音格式例如，mp3 wav m4a等。")
     print("也可以直接使用pcm文件。")
     print("开始之前，请先完成以下准备工作\n")
@@ -377,6 +560,16 @@ def main():
         break
     os.chdir(work_dir)
     while True:
+        src_file_type = input("请输入原始文件格式(mp3/wav/m4a/pcm等)：")
+        files = [file for file in os.listdir(".") if file.endswith(".{}".format(src_file_type))]
+        n = len(files)
+        if n > 0:
+            files.sort(key=lambda x: int(x.split(".")[0]))
+            break
+        else:
+            print("输入有误，请重新输入")
+            continue
+    while True:
         try:
             text = open("texts.txt", encoding="gb18030")
             try:
@@ -389,22 +582,22 @@ def main():
             texts = [text.strip() for text in texts if text.strip()]
             break
         except FileNotFoundError:
-            input("工作目录下texts.txt不存在，请按要求放入该文件，然后按回车继续")
+            inp = input("工作目录下texts.txt不存在，请按要求放入该文件，然后按回车继续"
+                        "\n若要执行语音转文本功能，请输入 iat :")
+            if inp == "iat":
+                open("result.json", "w").close()
+                process_record()
+                iat = Iat()
+                for file in files:
+                    iat.start(os.path.join("pcm", file.replace(src_file_type, "pcm")))
+                input("语音转文字结果以及保存到texts.txt文件，但是，请务必再次手工校对，校对完成后，按回车继续...")
+                while True:
+                    inp = input("再次询问，确保你真的对结果进行了校对，如果是，请输入 \"我已校对\": ")
+                    if inp == "我已校对":
+                        break
             continue
 
     n = len(texts) + 1
-    is_error = True
-    while is_error:
-        is_error = False
-        src_file_type = input("请输入原始文件格式(mp3/wav/m4a/pcm等)：")
-        for i in range(1, n):
-            try:
-                open("{}.{}".format(i, src_file_type), "r")
-            except FileNotFoundError:
-                print("声音文件 {}.{} 不存在。".format(i, src_file_type))
-                is_error = True
-        if is_error:
-            input("存在错误，请处理完按回车继续...")
     open("result.json", "w").close()
     get_authorization()
     print("文件准备就绪，开始处理")
