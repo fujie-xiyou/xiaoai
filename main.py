@@ -35,7 +35,7 @@ if os_name == "Windows":
 else:
     ffmpeg_exec = "ffmpeg"
     cp_exec = "cp"
-config_path = os.path.expanduser("~/.xiaoai")
+config_path = os.path.join(os.path.expanduser("~"), ".xiaoai")
 if not os.path.exists(config_path):
     os.mkdir(config_path)
 
@@ -145,29 +145,44 @@ class Iat(object):
         self.STATUS_CONTINUE_FRAME = 1  # 中间帧标识
         self.STATUS_LAST_FRAME = 2  # 最后一帧的标识
         self.all_result = ''
-        xunfei_config_path = os.path.join(config_path, "xunfei.conf")
+        self.xunfei_config_path = os.path.join(config_path, "xunfei.conf")
         try:
-            f = open(xunfei_config_path)
+            f = open(self.xunfei_config_path)
             self.app_id = f.readline().strip()
             self.api_secret = f.readline().strip()
             self.api_key = f.readline().strip()
+            self.wsParam = Ws_Param(APPID=self.app_id, APIKey=self.api_key,
+                                    APISecret=self.api_secret)
             f.close()
         except FileNotFoundError:
-            print("你是第一次使用该功能，需要在讯飞开发平台(https://www.xfyun.cn/)")
+            print("你是第一次使用该功能，需要在讯飞开放平台(https://www.xfyun.cn/)")
             print("注册账户，并新建一个语音听写应用")
             print("然后可以在(https://www.xfyun.cn/services/voicedictation)领取五万次服务包")
             print("然后将控制台的APPID、APISecret、APIKey依次输入")
             input("准备就绪后按回车继续...")
-            self.app_id = input("请输入讯飞APPID：")
-            self.api_secret = input("请输入讯飞APISecret：")
-            self.api_key = input("请输入讯飞APIKey：")
-            f = open(xunfei_config_path, "w")
-            f.writelines(self.app_id + "\n")
-            f.writelines(self.api_secret + "\n")
-            f.writelines(self.api_key + "\n")
-            f.close()
-        self.wsParam = Ws_Param(APPID=self.app_id, APIKey=self.api_key,
-                           APISecret=self.api_secret)
+            while True:
+                self.app_id = input("请输入讯飞APPID：")
+                self.api_secret = input("请输入讯飞APISecret：")
+                self.api_key = input("请输入讯飞APIKey：")
+                self.wsParam = Ws_Param(APPID=self.app_id, APIKey=self.api_key,
+                                        APISecret=self.api_secret)
+                wsUrl = self.wsParam.create_url()
+                is_ok = [True]
+                ws = websocket.WebSocketApp(
+                    wsUrl,
+                    on_error=lambda ws_, error: is_ok.clear() if "401" in str(error) else is_ok,
+                    on_open=lambda ws_: ws_.close()
+                )
+                ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE})
+                if is_ok:
+                    f = open(self.xunfei_config_path, "w")
+                    f.writelines(self.app_id + "\n")
+                    f.writelines(self.api_secret + "\n")
+                    f.writelines(self.api_key + "\n")
+                    f.close()
+                    break
+                else:
+                    print("输入有误，请重新输入")
 
     def start(self, audio_file):
         self.all_result = ''
@@ -180,6 +195,8 @@ class Iat(object):
                 if code != 0:
                     errMsg = json.loads(message)["message"]
                     print("sid:%s call error:%s code is:%s" % (sid, errMsg, code))
+                    if os.path.exists(self.xunfei_config_path):
+                        os.remove(self.xunfei_config_path)
 
                 else:
                     data = json.loads(message)["data"]["result"]["ws"]
