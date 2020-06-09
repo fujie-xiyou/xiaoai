@@ -45,7 +45,7 @@ codes = {
     40008: "出现了一些小问题",
     40009: "多读了",
 }
-data = {
+upload_data = {
     "audio_data": "",
     "audio_format": {
         "codec": "pcm",
@@ -77,7 +77,7 @@ headers = {
                   "Flavors/upgrade28",
 }
 
-new_data = {
+post_data = {
     "train_data_url": [
     ],
     "device_id": ''.join(random.sample(string.ascii_letters + string.digits, 22)),
@@ -380,12 +380,12 @@ def upload_record():
     for i in range(1, n):
         with open("b64/%s.b64" % i, "r") as f:
             audio_data = f.read()
-            data["audio_data"] = audio_data
-            data["request_id"] = ''.join(random.sample(string.ascii_letters + string.digits, 22))
+            upload_data["audio_data"] = audio_data
+            upload_data["request_id"] = ''.join(random.sample(string.ascii_letters + string.digits, 22))
             while True:
                 try:
                     resp = requests.post("https://speech.ai.xiaomi.com/speech/v1.0/ptts/upload",
-                                         json=data,
+                                         json=upload_data,
                                          headers=headers,
                                          timeout=5)
                     if resp.status_code == 200:
@@ -393,7 +393,7 @@ def upload_record():
                         if resp_json["code"] == 200:
                             print("第 %s 条上传成功" % i)
                             item = {"url": resp_json["audio_file"], "id": str(i), "text": texts[i - 1]}
-                            new_data["train_data_url"].append(item)
+                            post_data["train_data_url"].append(item)
                             break
                         else:
                             print("第 %s 条上传失败，resp: %s" % (i, resp.text))
@@ -460,14 +460,14 @@ def post_record():
         if inp != '1' and inp != '2':
             print("输入错误，请重新输入")
             continue
-        new_data["user_gender"] = "male" if inp == '1' else "female"
+        post_data["user_gender"] = "male" if inp == '1' else "female"
         break
     while True:
-        new_data["model_name"] = input("请输入音色名称：")
+        post_data["model_name"] = input("请输入音色名称：")
         while True:
             try:
                 resp = requests.post("https://speech.ai.xiaomi.com/speech/v1.0/ptts/train",
-                                     json=new_data,
+                                     json=post_data,
                                      headers=headers,
                                      timeout=5)
                 break
