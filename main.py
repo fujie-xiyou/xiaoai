@@ -478,6 +478,7 @@ def post_record():
             resp_json = resp.json()
             if int(resp_json["code"]) == 200:
                 print("提交成功，请进入小爱音色列表查看")
+                dump_post_data()
                 break
             else:
                 print("提交失败，{} 错误码: {}".format(resp_json["details"], resp_json["code"]))
@@ -551,6 +552,16 @@ def get_authorization():
                 continue
 
 
+def dump_post_data():
+    _raw_model = post_data["model_name"]
+    file_name = f"{_raw_model}.json"
+    f = open(file_name, "w")
+    content = json.dumps(post_data, ensure_ascii=False, sort_keys=True, indent=True)
+    f.write(content)
+    f.close()
+    print(f"工作目录下的 {file_name} 文件，可以作为机器人的训练模型，如果你愿意，请分享该文件。")
+
+
 def main():
     global texts
     global src_file_type
@@ -593,7 +604,7 @@ def main():
                 texts = text.readlines()
             except UnicodeDecodeError:
                 text.close()
-                text = open("texts.txt", encoding="utf-8")
+                text = open("texts.txt", encoding="utf_8_sig")
                 texts = text.readlines()
             text.close()
             texts = [text.strip() for text in texts if text.strip()]
